@@ -1,0 +1,49 @@
+# ─── Virtual environment ─────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ─── Python bytecode ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ─── Database files ───────────────────────────────────────────────
+# IMPORTANT: The database contains cryptographic keys in base64.
+# Never commit to a public repository.
+database/mase_se.db
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── MIMIC-IV dataset ────────────────────────────────────────────
+# CRITICAL: MIMIC-IV data is covered by the PhysioNet Credentialed
+# Health Data Use Agreement. It is strictly prohibited to upload any
+# MIMIC-IV data — raw, processed, or derived — to a public repository.
+hosp/
+
+# ─── Logs and temp files ─────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+
+# ─── IDE and OS files ────────────────────────────────────────────
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+
+# ─── Test artifacts ──────────────────────────────────────────────
+tests/test_mase_se.db
+
+# ─── Sensitive configuration ─────────────────────────────────────
+# If you move secrets to a .env file, exclude it here
+.env
+secrets.py
+
+# Extra docs to ignore
+Computer_Security_Literature_Review_Formatted.docx
+CS Project idea (1).pdf
+Literature_Review_Fixed.txt
+MANUAL.txt
+data/*.csv

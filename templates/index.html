@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MASE-SE — Secure EHR Sharing</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">🔐</div>
+      <div class="brand-text">
+        <div class="brand-name">MASE-SE</div>
+        <div class="brand-sub">Secure EHR Sharing</div>
+      </div>
+    </div>
+        <ul class="nav-list">
+      <li class="nav-group-label">&#8212;&#8212; Core Security &#8212;&#8212;</li>
+      <li><a href="#" class="nav-link active" data-section="overview">&#128202; Overview</a></li>
+      <li><a href="#" class="nav-link" data-section="users">&#128101; Hospitals &amp; Users</a></li>
+      <li><a href="#" class="nav-link" data-section="cloud">&#9729;&#65039; Cloud Records View</a></li>
+      <li><a href="#" class="nav-link demo-link" data-section="search">&#128269; Search &amp; Authorization</a></li>
+      <li><a href="#" class="nav-link" data-section="consent">&#128737;&#65039; Consent Management</a></li>
+      <li class="nav-group-label">&#8212;&#8212; Advanced (40%) &#8212;&#8212;</li>
+      <li><a href="#" class="nav-link" data-section="mpc">&#128273; Multi-Authority MPC</a></li>
+      <li><a href="#" class="nav-link" data-section="delegation">&#9203;&#65039; Temporary Delegation</a></li>
+      <li><a href="#" class="nav-link" data-section="policy">&#128274; Protected Policy</a></li>
+      <li><a href="#" class="nav-link" data-section="verifiable">&#9989; Verifiable Search</a></li>
+      <li class="nav-group-label">&#8212;&#8212; System &#8212;&#8212;</li>
+      <li><a href="#" class="nav-link" data-section="dataloader">&#128190; Data Loader</a></li>
+      <li><a href="#" class="nav-link" data-section="audit">&#128203; Audit Log</a></li>
+      <li><a href="#" class="nav-link" data-section="performance">&#9889; Performance</a></li>
+    </ul>
+    <div class="sidebar-footer">Research Prototype v2.0</div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main">
+    <header class="topbar">
+      <h1 class="page-title" id="page-title">System Overview</h1>
+      <div class="topbar-right">
+        <span class="badge badge-info" id="status-badge">Loading…</span>
+      </div>
+    </header>
+
+    <!-- ═══════════════ OVERVIEW ═══════════════ -->
+    <section id="section-overview" class="section active">
+      <div id="setup-notice" class="alert alert-warning" style="display:none">
+        ⚠️ Data not loaded yet. Run: <code>py database/seed.py</code> then <code>py data/preprocess_mimic.py</code>
+      </div>
+
+      <div class="stats-grid" id="stats-grid"></div>
+
+      <div class="card mt-4">
+        <div class="card-header">System Architecture</div>
+        <div class="card-body">
+          <div class="arch-diagram">
+<pre class="arch-pre">
+  DOCTOR / NURSE / RESEARCHER
+           │
+           ▼
+    ┌──────────────┐
+    │  SHA-256     │  → USER_HASH (cloud never sees real ID)
+    └──────────────┘
+           │
+           ▼
+    ┌──────────────────────────────────────────┐
+    │           CLOUD STORAGE LAYER            │
+    │                                          │
+    │  patient_hash  →  Encrypted EHR          │
+    │                   (AES-256-GCM)          │
+    │                                          │
+    │  search_token  →  Encrypted Record IDs   │
+    │  (HMAC-SHA256)    (no plaintext keyword) │
+    │                                          │
+    │  Consent Policy: Hospital × Role × Time  │
+    └──────────────────────────────────────────┘
+           │
+           ▼
+    AUTHORIZATION ENGINE
+    Hospital Match  AND  Role Match
+    AND  Consent Active  AND  Time Valid
+           │
+      ┌────┴────┐
+      ▼         ▼
+   ALLOW      DENY
+   decrypt    blocked
+</pre>
+          </div>
+
+          <div class="arch-legend mt-3">
+            <div class="legend-row">
+              <span class="legend-dot green"></span>
+              <span><strong>AES-256-GCM</strong> — EHR content encrypted at rest. Cloud stores only ciphertext.</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-dot blue"></span>
+              <span><strong>HMAC-SHA256</strong> — Keywords protected as tokens. Cloud never sees "diabetes".</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-dot orange"></span>
+              <span><strong>SHA-256</strong> — Patient identifiers hashed. Cloud stores patient_hash only.</span>
+            </div>
+            <div class="legend-row">
+                <span class="legend-dot purple"></span>
+                <span><strong>Shamir's Secret Sharing (SSS)</strong> — Multi-Authority MPC prevents single points of failure.</span>
+              </div>
+              <div class="legend-row">
+                <span class="legend-dot purple"></span>
+                <span><strong>Bloom Filters</strong> — Hidden policies protect patient consent rules from the cloud.</span>
+              </div>
+              <div class="legend-row">
+                <span class="legend-dot purple"></span>
+                <span><strong>HMAC-SHA256</strong> — Temporary delegation tokens grant time-limited, role-bound access.</span>
+              </div>
+              <div class="legend-row">
+                <span class="legend-dot purple"></span>
+                <span><strong>Cryptographic Accumulators</strong> — Verifiable search mathematically detects tampering by the cloud.</span>
+              </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ USERS ═══════════════ -->
+    <section id="section-users" class="section">
+      <div class="hospitals-grid" id="hospitals-grid"></div>
+      <div class="card mt-4">
+        <div class="card-header">
+          System Users (20 Simulated Actors)
+          <input type="text" id="user-search" class="search-input" placeholder="Filter users…">
+        </div>
+        <div class="card-body no-pad">
+          <table class="table" id="users-table">
+            <thead><tr>
+              <th>User ID</th><th>Full Name</th><th>Role</th>
+              <th>Hospital</th><th>Status</th><th>SHA-256 Hash</th>
+            </tr></thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ CLOUD VIEW ═══════════════ -->
+    <section id="section-cloud" class="section">
+      <div class="card">
+        <div class="card-header">Cloud Storage View — Patient Records</div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            ☁️ This is what the cloud server sees. <strong>No plaintext EHR content is stored or displayed here.</strong>
+            The cloud only holds: patient_hash, encrypted ciphertext, nonce, GCM tag.
+          </div>
+          <div class="form-row">
+            <label>Select Patient:</label>
+            <select id="cloud-patient-select" class="form-select" onchange="loadCloud(this.value)">
+              <option value="">-- Select --</option>
+              <option>PATIENT_001</option><option>PATIENT_002</option>
+              <option>PATIENT_003</option><option>PATIENT_004</option>
+              <option>PATIENT_005</option><option>PATIENT_006</option>
+            </select>
+          </div>
+          <div id="cloud-patient-hash" class="hash-display" style="display:none"></div>
+          <div id="cloud-records-container"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ SEARCH & AUTHORIZATION ═══════════════ -->
+    <section id="section-search" class="section">
+      <div class="demo-banner">🎓 Teacher Demonstration — Complete Authorization Workflow</div>
+
+      <div class="search-layout">
+        <!-- Input Panel -->
+        <div class="card search-input-card">
+          <div class="card-header">Step 1: Search Query</div>
+          <div class="card-body">
+            <div class="form-group">
+              <label>Select User (Requester)</label>
+              <select id="search-user" class="form-select"></select>
+              <div class="user-info-box" id="search-user-info"></div>
+            </div>
+            <div class="form-group">
+              <label>Select Patient</label>
+              <select id="search-patient" class="form-select">
+                <option value="">-- Select --</option>
+                <option>PATIENT_001</option><option>PATIENT_002</option>
+                <option>PATIENT_003</option><option>PATIENT_004</option>
+                <option>PATIENT_005</option><option>PATIENT_006</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Keywords (space-separated)</label>
+              <input type="text" id="search-keywords" class="form-input"
+                     placeholder="e.g. diabetes hypertension">
+              <div class="hint">Multiple keywords = AND search (conjunctive)</div>
+            </div>
+            <button class="btn btn-primary btn-lg" id="search-btn" onclick="runSearch()">
+              🔍 SEARCH
+            </button>
+          </div>
+        </div>
+
+        <!-- Tokens Panel -->
+        <div class="card" id="tokens-card" style="display:none">
+          <div class="card-header">Step 2: Protected Search Tokens</div>
+          <div class="card-body">
+            <div class="alert alert-info small-text">
+              The cloud receives these HMAC tokens — <strong>never the plaintext keyword</strong>.
+            </div>
+            <div id="tokens-display"></div>
+            <div class="mt-2">
+              <strong>Matching Records:</strong>
+              <span id="match-count" class="badge badge-info">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Authorization Decision -->
+      <div class="card mt-4" id="auth-card" style="display:none">
+        <div class="card-header">Step 3: Authorization Decision</div>
+        <div class="card-body">
+          <div class="auth-grid" id="auth-conditions"></div>
+          <div class="auth-verdict" id="auth-verdict"></div>
+          <div class="auth-reason" id="auth-reason"></div>
+        </div>
+      </div>
+
+      <!-- Decrypted EHR Results -->
+      <div class="card mt-4" id="results-card" style="display:none">
+        <div class="card-header">Step 4: Decrypted EHR Results</div>
+        <div class="card-body">
+          <div class="alert alert-success">
+            ✅ Authorization granted. EHR decrypted and displayed below.
+          </div>
+          <div id="ehr-results"></div>
+            <div id="decrypted-ehr" class="mt-4"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ CONSENT MANAGEMENT ═══════════════ -->
+    <section id="section-consent" class="section">
+      <div class="card">
+        <div class="card-header">Consent Management</div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            Each patient controls which hospital/role combinations can access their EHR.
+            Changes take effect <strong>immediately</strong> on the next search.
+          </div>
+          <div class="form-row">
+            <label>Select Patient:</label>
+            <select id="consent-patient-select" class="form-select" onchange="loadConsent(this.value)">
+              <option value="">-- Select --</option>
+              <option>PATIENT_001</option><option>PATIENT_002</option>
+              <option>PATIENT_003</option><option>PATIENT_004</option>
+              <option>PATIENT_005</option><option>PATIENT_006</option>
+            </select>
+          </div>
+          <div id="consent-table-container" class="mt-3"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ AUDIT LOG ═══════════════ -->
+    <section id="section-audit" class="section">
+      <div class="card">
+        <div class="card-header">
+          Audit Log
+          <span class="badge badge-info" id="audit-count">—</span>
+          <button class="btn btn-sm btn-secondary" onclick="loadAudit()">↻ Refresh</button>
+        </div>
+        <div class="card-body no-pad">
+          <table class="table table-sm" id="audit-table">
+            <thead><tr>
+              <th>Timestamp</th><th>Event</th><th>User</th><th>Details</th><th>Result</th>
+            </tr></thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ MPC ═══════════════ -->
+    <section id="section-mpc" class="section">
+      <div class="card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>Multi-Authority MPC — Shamir (2,3) Secret Sharing</div>
+            <div style="display: flex; gap: 8px;">
+                <select id="mpc-action-select" class="form-select form-select-sm" style="width: 250px; display:inline-block;">
+                    <option value="Action Authorized: Add New Hospital">Action: Add New Hospital</option>
+                    <option value="Action Authorized: Revoke Hacked Hospital">Action: Revoke Hacked Hospital</option>
+                    <option value="Action Authorized: National Emergency Override">Action: National Emergency Override</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="generateMPC()">⚡ Generate Shared Secret</button>
+            </div>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            A fresh random secret is split into <strong>3 shares</strong> (one per hospital).
+            Any <strong>2 shares</strong> reconstruct the secret. <strong>1 share alone reveals nothing.</strong>
+            This is real Shamir (2,3) over GF(2<sup>127</sup>&minus;1).
+          </div>
+          <div id="mpc-shares-display" style="display:none">
+            <h4>Generated Shares</h4>
+            <div id="mpc-shares-grid" class="mpc-shares-grid"></div>
+            <div class="mt-4">
+              <h4>Reconstruction Attempts</h4>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                <button class="btn btn-success btn-sm" onclick="reconstructMPC(['Hospital_A','Hospital_B'])">&#10003; Use A + B</button>
+                <button class="btn btn-success btn-sm" onclick="reconstructMPC(['Hospital_A','Hospital_C'])">&#10003; Use A + C</button>
+                <button class="btn btn-success btn-sm" onclick="reconstructMPC(['Hospital_B','Hospital_C'])">&#10003; Use B + C</button>
+                <button class="btn btn-danger btn-sm" onclick="reconstructMPC(['Hospital_A'])">&#10007; Use A Only</button>
+                <button class="btn btn-danger btn-sm" onclick="reconstructMPC(['Hospital_B'])">&#10007; Use B Only</button>
+                <button class="btn btn-danger btn-sm" onclick="reconstructMPC(['Hospital_C'])">&#10007; Use C Only</button>
+              </div>
+              <div id="mpc-reconstruct-result"></div>
+            </div>
+          </div>
+          <div id="mpc-sessions-list" class="mt-4"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ DELEGATION ═══════════════ -->
+    <section id="section-delegation" class="section">
+      <div class="card">
+        <div class="card-header">Temporary Delegation — HMAC-SHA256-Signed Time-Limited Tokens</div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            Doctor A delegates temporary access to Doctor B for a specific patient.
+            The token is HMAC-SHA256-signed and includes an expiry timestamp.
+            <strong>Consent revocation overrides a valid token.</strong>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Delegator (granting user)</label>
+              <select id="del-delegator" class="form-control">
+                <option value="DOCTOR_001">DOCTOR_001 (Hospital_A)</option>
+                <option value="DOCTOR_004">DOCTOR_004 (Hospital_B)</option>
+                <option value="DOCTOR_007">DOCTOR_007 (Hospital_C)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Delegatee (receiving user)</label>
+              <select id="del-delegatee" class="form-control">
+                <option value="DOCTOR_002">DOCTOR_002 (Hospital_A)</option>
+                <option value="DOCTOR_003">DOCTOR_003 (Hospital_A)</option>
+                <option value="DOCTOR_005">DOCTOR_005 (Hospital_B)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Patient</label>
+              <select id="del-patient" class="form-control">
+                <option value="PATIENT_001">PATIENT_001</option>
+                <option value="PATIENT_002">PATIENT_002</option>
+                <option value="PATIENT_003">PATIENT_003</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Hospital Authority</label>
+              <select id="del-hospital" class="form-control">
+                <option value="Hospital_A">Hospital_A</option>
+                <option value="Hospital_B">Hospital_B</option>
+                <option value="Hospital_C">Hospital_C</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Duration (minutes)</label>
+              <input type="number" id="del-duration" class="form-control" value="60" min="1" max="1440">
+            </div>
+            <div class="form-group">
+              <label>Scope</label>
+              <select id="del-scope" class="form-control">
+                <option value="search">search</option>
+                <option value="decrypt">decrypt</option>
+                <option value="all">all</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="createDelegation()">&#128273; Create Delegation Token</button>
+          <div id="delegation-token-display" style="display:none;margin-top:16px">
+            <div id="delegation-token-info"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <button class="btn btn-success btn-sm" onclick="validateDelegation(false)">&#9989; Validate Token (Normal)</button>
+              <button class="btn btn-warning btn-sm" onclick="validateDelegation(true)">&#9203; Validate Token (Simulated Expired)</button>
+            </div>
+            <div id="delegation-validate-result" class="mt-3"></div>
+          </div>
+          <div id="delegation-list" class="mt-4"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ PROTECTED POLICY ═══════════════ -->
+    <section id="section-policy" class="section">
+      <div class="card">
+        <div class="card-header">Protected Access Policy — Prototype Policy Hiding</div>
+        <div class="card-body">
+          <div class="alert alert-warning">
+            <strong>Prototype Mechanism (not formal CP-ABE):</strong> Policy attributes are represented
+            as HMAC-SHA256 commitments. The cloud stores protected identifiers, not plaintext
+            "Hospital_A" or "Doctor" strings.
+          </div>
+          <div class="form-group" style="max-width:300px">
+            <label>Select Patient</label>
+            <select id="policy-patient" class="form-control" onchange="loadPolicy()">
+              <option value="PATIENT_001">PATIENT_001</option>
+              <option value="PATIENT_002">PATIENT_002</option>
+              <option value="PATIENT_003">PATIENT_003</option>
+              <option value="PATIENT_004">PATIENT_004</option>
+              <option value="PATIENT_005">PATIENT_005</option>
+              <option value="PATIENT_006">PATIENT_006</option>
+            </select>
+          </div>
+          <div id="policy-display"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ VERIFIABLE SEARCH ═══════════════ -->
+    <section id="section-verifiable" class="section">
+      <div class="card">
+        <div class="card-header">Blockchain-Free Verifiable Search — HMAC Accumulator</div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            The verification value is bound to <strong>both</strong> the query AND the result set.
+            Tampering with the results causes verification to FAIL.
+            No blockchain or third party required.
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Keywords</label>
+              <input type="text" id="vfy-keywords" class="form-control" value="diabetes" placeholder="e.g. diabetes hypertension">
+            </div>
+            <div class="form-group">
+              <label>Patient (for search)</label>
+              <select id="vfy-patient" class="form-control">
+                <option value="PATIENT_001">PATIENT_001</option>
+                <option value="PATIENT_002">PATIENT_002</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="runVerifiableSearch()">&#128269; Search + Compute Verification</button>
+          <div id="vfy-result" style="display:none;margin-top:16px">
+            <div id="vfy-search-info"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <button class="btn btn-success btn-sm" onclick="verifyResults(false)">&#9989; Verify (Original Results)</button>
+              <button class="btn btn-danger btn-sm" onclick="verifyResults(true)">&#128249; Simulate Tampering</button>
+            </div>
+            <div id="vfy-verify-result" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ DATA LOADER ═══════════════ -->
+    <section id="section-dataloader" class="section">
+
+      <!-- Current Status Banner -->
+      <div id="dl-status-banner" class="dl-status-banner">
+        <span id="dl-status-icon">&#128190;</span>
+        <span id="dl-status-text">Checking database…</span>
+        <span id="dl-source-badge" class="badge" style="margin-left:10px"></span>
+      </div>
+
+      <!-- Three Option Cards -->
+      <div class="dl-cards-grid">
+
+        <!-- Card 1: MIMIC-IV -->
+        <div class="dl-card dl-card-mimic">
+          <div class="dl-card-icon">&#129504;</div>
+          <div class="dl-card-title">MIMIC-IV Dataset</div>
+          <div class="dl-card-desc">
+            Real clinical data from Beth Israel Deaconess Medical Center.
+            <strong>10,000+ EHR records.</strong> Requires separate download from
+            <a href="https://physionet.org/content/mimiciv/" target="_blank">PhysioNet</a>
+            (credentialed access required).
+          </div>
+          <div class="dl-card-steps">
+            <div class="dl-step">1. Download MIMIC-IV from PhysioNet</div>
+            <div class="dl-step">2. Place <code>.csv.gz</code> files in <code>hosp/</code></div>
+            <div class="dl-step">3. Run: <code>py data/preprocess_mimic.py</code></div>
+          </div>
+          <div class="dl-card-badge">&#9888;&#65039; Requires PhysioNet credentials</div>
+        </div>
+
+        <!-- Card 2: Dummy Dataset -->
+        <div class="dl-card dl-card-dummy">
+          <div class="dl-card-icon">&#9889;</div>
+          <div class="dl-card-title">Dummy Dataset</div>
+          <div class="dl-card-desc">
+            <strong>500 fictional EHR records</strong> built into the project.
+            No downloads required. Ideal for first-time users, development,
+            and GitHub clones. Fully compatible with all crypto features.
+          </div>
+          <div class="dl-card-steps">
+            <div class="dl-step">Patients: PATIENT_001 → PATIENT_006</div>
+            <div class="dl-step">Hospitals: Hospital_A, B, C</div>
+            <div class="dl-step">Diagnoses: 15 real medical conditions</div>
+            <div class="dl-step">Keywords: diabetes, sepsis, stroke, …</div>
+          </div>
+          <button class="btn btn-primary" onclick="loadDummyDataset()" id="btn-load-dummy">
+            &#9889; Load Dummy Dataset
+          </button>
+          <div id="dl-dummy-result" style="margin-top:10px"></div>
+        </div>
+
+        <!-- Card 3: Custom Dataset -->
+        <div class="dl-card dl-card-custom">
+          <div class="dl-card-icon">&#128196;</div>
+          <div class="dl-card-title">Custom Dataset</div>
+          <div class="dl-card-desc">
+            Upload your own <strong>CSV file</strong>.
+            The system will validate, encrypt, and index your records automatically.
+            Download the template below to see the exact format required.
+          </div>
+          <a href="/api/dataloader/template" class="btn btn-secondary btn-sm" style="margin-bottom:10px;display:inline-block">
+            &#11015;&#65039; Download Template CSV
+          </a>
+          <div class="dl-upload-area" id="dl-upload-area"
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="handleCsvDrop(event)">
+            <div style="font-size:28px;margin-bottom:6px">&#128196;</div>
+            <div>Drag &amp; drop your CSV here, or</div>
+            <label class="btn btn-primary btn-sm" style="margin-top:8px;cursor:pointer">
+              Browse File
+              <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="handleCsvFile(event)">
+            </label>
+          </div>
+          <div id="dl-custom-preview" style="display:none;margin-top:10px">
+            <div id="dl-custom-preview-info" class="alert alert-info"></div>
+            <button class="btn btn-success" onclick="uploadCustomCsv()">&#128228; Load This Dataset</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearCustomCsv()" style="margin-left:8px">&#10005; Clear</button>
+          </div>
+          <div id="dl-custom-result" style="margin-top:10px"></div>
+        </div>
+
+      </div>
+
+      <!-- Custom Dataset Format Guide -->
+      <div class="card mt-4">
+        <div class="card-header" onclick="toggleGuide()" style="cursor:pointer">
+          &#128218; Custom Dataset Format Guide &amp; Manual
+          <span id="guide-toggle" style="float:right;font-size:12px">&#9660; Click to expand</span>
+        </div>
+        <div class="card-body" id="format-guide" style="display:none">
+          <div class="alert alert-info">
+            Your CSV file must be <strong>UTF-8 encoded</strong> with a header row.
+            Save as <code>.csv</code> from Excel or Google Sheets.
+          </div>
+
+          <h4 style="margin-bottom:12px">Required Columns</h4>
+          <table class="table">
+            <thead><tr><th>Column</th><th>Required</th><th>Allowed Values</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td><code>record_id</code></td><td>&#9989;</td><td>Any unique string</td><td><code>CUSTOM_001</code></td></tr>
+              <tr><td><code>patient_id</code></td><td>&#9989;</td><td>PATIENT_001 to PATIENT_006</td><td><code>PATIENT_001</code></td></tr>
+              <tr><td><code>hospital_id</code></td><td>&#9989;</td><td>Hospital_A, Hospital_B, Hospital_C</td><td><code>Hospital_A</code></td></tr>
+              <tr><td><code>department</code></td><td>&#9989;</td><td>Any string</td><td><code>Cardiology</code></td></tr>
+              <tr><td><code>diagnosis</code></td><td>&#9989;</td><td>Any string</td><td><code>Type 2 Diabetes</code></td></tr>
+              <tr><td><code>icd_code</code></td><td>&#10060;</td><td>ICD-10 code (optional)</td><td><code>E11</code></td></tr>
+              <tr><td><code>admit_date</code></td><td>&#9989;</td><td>YYYY-MM-DD</td><td><code>2024-01-15</code></td></tr>
+              <tr><td><code>discharge_date</code></td><td>&#10060;</td><td>YYYY-MM-DD</td><td><code>2024-01-20</code></td></tr>
+              <tr><td><code>sensitivity</code></td><td>&#9989;</td><td>LOW, MEDIUM, or HIGH</td><td><code>HIGH</code></td></tr>
+              <tr><td><code>keywords</code></td><td>&#9989;</td><td>Comma-separated search terms</td><td><code>diabetes,glucose,insulin</code></td></tr>
+              <tr><td><code>notes</code></td><td>&#10060;</td><td>Free text</td><td><code>Patient admitted with high blood sugar</code></td></tr>
+            </tbody>
+          </table>
+
+          <h4 style="margin:16px 0 8px">Rules</h4>
+          <ul style="font-size:13px;line-height:2;padding-left:20px">
+            <li><strong>record_id</strong> must be unique across all rows — duplicates are rejected.</li>
+            <li><strong>patient_id</strong> must exactly match one of the 6 seeded patients (PATIENT_001 … PATIENT_006).</li>
+            <li><strong>hospital_id</strong> must exactly match Hospital_A, Hospital_B, or Hospital_C (case-sensitive).</li>
+            <li><strong>keywords</strong> are the terms users will search for — include diagnosis-related words.</li>
+            <li>Rows with validation errors are <strong>skipped</strong>; valid rows are still loaded.</li>
+            <li>Loading a new dataset <strong>replaces</strong> all existing EHR records and search index.</li>
+            <li>Users, patients, hospitals, and consent policies are <strong>not affected</strong>.</li>
+          </ul>
+
+          <h4 style="margin:16px 0 8px">Minimal Working Example</h4>
+          <pre class="arch-pre" style="font-size:11px;line-height:1.6">record_id,patient_id,hospital_id,department,diagnosis,admit_date,sensitivity,keywords
+MY_001,PATIENT_001,Hospital_A,Cardiology,Hypertension,2024-01-10,HIGH,"hypertension,blood pressure"
+MY_002,PATIENT_002,Hospital_A,Neurology,Stroke,2024-02-15,HIGH,"stroke,brain,neurological"
+MY_003,PATIENT_003,Hospital_B,ICU,Sepsis,2024-03-01,HIGH,"sepsis,infection,fever"</pre>
+
+          <div class="alert alert-warning" style="margin-top:12px">
+            <strong>Privacy note:</strong> Do not upload real patient data. This system is a research
+            prototype — all data you upload is encrypted with AES-256-GCM on your local machine, but the
+            database is stored unprotected on your filesystem.
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ═══════════════ PERFORMANCE ═══════════════ -->
+    <section id="section-performance" class="section">
+      <div class="card">
+        <div class="card-header">
+          Performance Benchmarks
+          <div style="display:inline-flex;gap:8px;margin-left:12px">
+            <button class="btn btn-primary btn-sm" onclick="loadPerformance()">&#9654; Core (60%)</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadAdvancedPerformance()">&#9654; Advanced (40%)</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            All values are <strong>real measured timings</strong> from actual program execution. No values are fabricated.
+          </div>
+          <div class="perf-grid" id="perf-grid">
+            <div class="perf-placeholder">Click a benchmark button above to measure performance.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script src="/static/js/app.js?v=2"></script>
+<script src="/static/js/dataloader.js"></script>
+</body>
+</html>
